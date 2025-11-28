@@ -1,0 +1,115 @@
+// ========================================
+// SUGGEST BOOKS PLUG v1.0
+// Entertainment Chatbot for Zoho SalesIQ
+// Purpose: Book recommendations via Google Books API
+// Auth: OAuth 2.0 Connection (Google Books)
+// Language: Deluge
+// ========================================
+
+pluginResponse = map();
+pluginResponse.put("isSuccessful", false);
+pluginResponse.put("timestamp", now().toString());
+
+try {
+    // ===== INPUT VALIDATION =====
+    genre = plug_input.get("genre");
+    rating = plug_input.get("rating");
+    
+    info "[BooksPlug] Processing request - Genre: " + genre + ", Rating: " + rating;
+    
+    // Validate inputs
+    if(genre.isEmpty()) {
+        pluginResponse.put("message", "Please select a genre!");
+        return pluginResponse;
+    }
+    
+    // ===== API CONFIGURATION =====
+    google_books_url = "https://www.googleapis.com/books/v1/volumes";
+    
+    // ===== BUILD PARAMETERS =====
+    searchQuery = "subject:" + genre;
+    params = map();
+    params.put("q", searchQuery);
+    params.put("orderBy", "relevance");
+    params.put("maxResults", "20");
+    params.put("printType", "books");
+    params.put("langRestrict", "en");
+    
+    // Filter by rating if provided
+    if(!rating.isEmpty()) {
+        minRating = rating.toNumber();
+    } else {
+        minRating = 0;
+    }
+    
+    // ===== INVOKE GOOGLE BOOKS API =====
+    response = invokeurl([
+        url: google_books_url,
+        type: "GET",
+        parameters: params,
+        connection: "google_books_connection"
+    ]);
+    
+    responseMap = response.toMap();
+    
+    // ===== PROCESS RESPONSE =====
+    if(responseMap.get("totalItems") > 0) {
+        items = responseMap.get("items");
+        validBooks = list();
+        
+        for each item in items {
+            volumeInfo = item.get("volumeInfo");
+            avgRating = volumeInfo.get("averageRating");
+            
+            // Filter by rating
+            if(avgRating != null && avgRating >= minRating) {
+                validBooks.add(item);
+            } else if(minRating == 0) {
+                validBooks.add(item);
+            }
+        }
+        
+        if(validBooks.size() > 0) {
+            randomIndex = Math.rand(0, validBooks.size() - 1);
+            selectedBook = validBooks.get(randomIndex);
+            volumeInfo = selectedBook.get("volumeInfo");
+            
+            bookData = map();
+            bookData.put("title", volumeInfo.get("title"));
+            
+            // Handle authors array
+            authors = volumeInfo.get("authors");
+            if(authors != null && authors.size() > 0) {
+                bookData.put("author", authors.get(0));
+            } else {
+                bookData.put("author", "Unknown Author");
+            }
+            
+            bookData.put("rating", volumeInfo.get("averageRating") != null ? volumeInfo.get("averageRating") : "Not rated");
+            bookData.put("description", volumeInfo.get("description") != null ? volumeInfo.get("description").substring(0, 200) + "..." : "No description available");
+            bookData.put("published_date", volumeInfo.get("publishedDate") != null ? volumeInfo.get("publishedDate") : "Unknown");
+            bookData.put("preview_link", volumeInfo.get("previewLink") != null ? volumeInfo.get("previewLink") : "");
+            
+            // Get thumbnail
+            imageLinks = volumeInfo.get("imageLinks");
+            if(imageLinks != null) {
+                bookData.put("thumbnail", imageLinks.get("thumbnail"));
+            }
+            
+            pluginResponse.put("book", bookData);
+            pluginResponse.put("isSuccessful", true);
+            pluginResponse.put("message", "Found a great book for you!");
+        } else {
+            pluginResponse.put("message", "No books found with that rating. Try lowering your standards! :)");
+        }
+    } else {
+        pluginResponse.put("message", "No books found for this genre. Try another!");
+    }
+    
+} catch(e) {
+    pluginResponse.put("error", e.getMessage());
+    pluginResponse.put("isSuccessful", false);
+    error "[BooksPlug] Error: " + e.getMessage();
+}
+
+return pluginResponse;
