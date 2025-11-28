@@ -1,0 +1,114 @@
+// ========================================
+// SUGGEST MOVIE PLUG v1.0
+// Entertainment Chatbot for Zoho SalesIQ
+// Purpose: Movie recommendations via TMDB API
+// Auth: OAuth 2.0 Connection (TMDB)
+// Language: Deluge
+// ========================================
+
+pluginResponse = map();
+pluginResponse.put("isSuccessful", false);
+pluginResponse.put("timestamp", now().toString());
+
+try {
+  // ===== INPUT VALIDATION =====
+  genre = plug_input.get("genre");
+  min_rating = plug_input.get("min_rating");
+  year = plug_input.get("year");
+  
+  info "[MoviePlug] Processing request - Genre: " + genre + ", Rating: " + min_rating + ", Year: " + year;
+  
+  // Validate inputs
+  if(genre.isEmpty()) {
+    pluginResponse.put("message", "Please select a genre!");
+    return pluginResponse;
+  }
+  
+  // ===== API CONFIGURATION =====
+  tmdb_base_url = "https://api.themoviedb.org/3/discover/movie";
+  genreMap = getGenreIdMap();
+  genre_id = genreMap.get(genre.toLowerCase());
+  
+  // ===== BUILD PARAMETERS =====
+  params = map();
+  params.put("sort_by", "popularity.desc");
+  params.put("page", "1");
+  params.put("vote_average.gte", min_rating.isEmpty() ? "0" : min_rating);
+  params.put("include_adult", "false");
+  params.put("language", "en-US");
+  
+  if(!genre_id.isEmpty()) {
+    params.put("with_genres", genre_id);
+  }
+  if(!year.isEmpty()) {
+    params.put("primary_release_year", year);
+  }
+  
+  // ===== INVOKE TMDB API =====
+  response = invokeurl([
+    url: tmdb_base_url,
+    type: "GET",
+    parameters: params,
+    connection: "tmdb_connection"
+  ]);
+  
+  responseMap = response.toMap();
+  
+  // ===== PROCESS RESPONSE =====
+  if(responseMap.get("results").size() > 0) {
+    results = responseMap.get("results");
+    validMovies = list();
+    
+    for each movie in results {
+      if(movie.get("poster_path") != null) {
+        validMovies.add(movie);
+      }
+    }
+    
+    if(validMovies.size() > 0) {
+      randomIndex = Math.rand(0, validMovies.size() - 1);
+      selectedMovie = validMovies.get(randomIndex);
+      
+      movieData = map();
+      movieData.put("title", selectedMovie.get("title"));
+      movieData.put("year", selectedMovie.get("release_date").toString().substring(0, 4));
+      movieData.put("rating", selectedMovie.get("vote_average"));
+      movieData.put("overview", selectedMovie.get("overview"));
+      movieData.put("poster_url", "https://image.tmdb.org/t/p/w500" + selectedMovie.get("poster_path"));
+      movieData.put("tmdb_id", selectedMovie.get("id"));
+      
+      pluginResponse.put("movie", movieData);
+      pluginResponse.put("isSuccessful", true);
+      pluginResponse.put("message", "Found a perfect movie for you!");
+    }
+  } else {
+    pluginResponse.put("message", "No movies found matching your preferences. Try another genre!");
+  }
+  
+} catch(e) {
+  pluginResponse.put("error", e.getMessage());
+  pluginResponse.put("isSuccessful", false);
+  error "[MoviePlug] Error: " + e.getMessage();
+}
+
+return pluginResponse;
+
+// ===== HELPER: Genre Mapping =====
+function getGenreIdMap() {
+  genreMap = map();
+  genreMap.put("action", "28");
+  genreMap.put("adventure", "12");
+  genreMap.put("animation", "16");
+  genreMap.put("comedy", "35");
+  genreMap.put("crime", "80");
+  genreMap.put("drama", "18");
+  genreMap.put("family", "10751");
+  genreMap.put("fantasy", "14");
+  genreMap.put("horror", "27");
+  genreMap.put("mystery", "9648");
+  genreMap.put("romance", "10749");
+  genreMap.put("sci-fi", "878");
+  genreMap.put("thriller", "53");
+  genreMap.put("war", "10752");
+  return genreMap;
+}
