@@ -1,0 +1,167 @@
+// ========================================
+// EVENT FINDER PLUG v1.0
+// Entertainment Chatbot for Zoho SalesIQ
+// Purpose: Discover events via Ticketmaster API
+// Auth: API Key Connection (Ticketmaster)
+// Language: Deluge
+// ========================================
+
+pluginResponse = map();
+pluginResponse.put("isSuccessful", false);
+pluginResponse.put("timestamp", now().toString());
+
+try {
+    // ===== INPUT VALIDATION =====
+    eventType = plug_input.get("event_type"); // movies, concerts, talkshows, sports, etc.
+    city = plug_input.get("city");
+    dateRange = plug_input.get("date_range"); // today, this_week, this_month
+    
+    info "[EventPlug] Processing - Type: " + eventType + ", City: " + city + ", Range: " + dateRange;
+    
+    // Validate required inputs
+    if(city.isEmpty()) {
+        pluginResponse.put("message", "Please provide your city!");
+        return pluginResponse;
+    }
+    
+    // ===== API CONFIGURATION =====
+    ticketmaster_url = "https://app.ticketmaster.com/discovery/v2/events";
+    
+    // ===== BUILD PARAMETERS =====
+    params = map();
+    params.put("city", city);
+    params.put("size", "10");
+    params.put("sort", "date,asc");
+    
+    // Map event types to Ticketmaster classification
+    classificationMap = map();
+    classificationMap.put("movies", "Film");
+    classificationMap.put("concerts", "Music");
+    classificationMap.put("talkshows", "Arts & Theatre");
+    classificationMap.put("sports", "Sports");
+    classificationMap.put("comedy", "Arts & Theatre");
+    classificationMap.put("family", "Family");
+    
+    if(!eventType.isEmpty()) {
+        classification = classificationMap.get(eventType.toLowerCase());
+        if(classification != null) {
+            params.put("classificationName", classification);
+        }
+    }
+    
+    // Calculate date range
+    dateRangeParams = calculateDateRange(dateRange);
+    params.put("startDateTime", dateRangeParams.get("start"));
+    params.put("endDateTime", dateRangeParams.get("end"));
+    
+    // ===== INVOKE TICKETMASTER API =====
+    response = invokeurl([
+        url: ticketmaster_url,
+        type: "GET",
+        parameters: params,
+        connection: "ticketmaster_connection"
+    ]);
+    
+    responseMap = response.toMap();
+    
+    // ===== PROCESS RESPONSE =====
+    embedded = responseMap.get("_embedded");
+    
+    if(embedded != null) {
+        events = embedded.get("events");
+        
+        if(events != null && events.size() > 0) {
+            eventList = list();
+            
+            for each event in events {
+                eventData = map();
+                eventData.put("name", event.get("name"));
+                
+                // Get date and time
+                dates = event.get("dates");
+                if(dates != null) {
+                    start = dates.get("start");
+                    if(start != null) {
+                        eventData.put("date", start.get("localDate"));
+                        eventData.put("time", start.get("localTime") != null ? start.get("localTime") : "TBA");
+                    }
+                }
+                
+                // Get venue info
+                embeddedVenue = event.get("_embedded");
+                if(embeddedVenue != null) {
+                    venues = embeddedVenue.get("venues");
+                    if(venues != null && venues.size() > 0) {
+                        venue = venues.get(0);
+                        eventData.put("venue", venue.get("name"));
+                        eventData.put("city", venue.get("city") != null ? venue.get("city").get("name") : city);
+                    }
+                }
+                
+                // Get booking URL
+                eventData.put("booking_url", event.get("url"));
+                
+                // Get image
+                images = event.get("images");
+                if(images != null && images.size() > 0) {
+                    eventData.put("image", images.get(0).get("url"));
+                }
+                
+                // Get price range if available
+                priceRanges = event.get("priceRanges");
+                if(priceRanges != null && priceRanges.size() > 0) {
+                    price = priceRanges.get(0);
+                    eventData.put("price_min", price.get("min"));
+                    eventData.put("price_max", price.get("max"));
+                    eventData.put("currency", price.get("currency"));
+                }
+                
+                eventList.add(eventData);
+            }
+            
+            pluginResponse.put("events", eventList);
+            pluginResponse.put("total_found", eventList.size());
+            pluginResponse.put("isSuccessful", true);
+            pluginResponse.put("message", "Found " + eventList.size() + " events near you!");
+        } else {
+            pluginResponse.put("message", "No events found. Try a different city or date!");
+        }
+    } else {
+        pluginResponse.put("message", "No events found in " + city + ". Try another location!");
+    }
+    
+} catch(e) {
+    pluginResponse.put("error", e.getMessage());
+    pluginResponse.put("isSuccessful", false);
+    error "[EventPlug] Error: " + e.getMessage();
+}
+
+return pluginResponse;
+
+// ===== HELPER: Calculate Date Range =====
+function calculateDateRange(rangeType) {
+    result = map();
+    today = zoho.currentdate;
+    
+    // Format: YYYY-MM-DDTHH:MM:SSZ
+    startDate = today.toString("yyyy-MM-dd") + "T00:00:00Z";
+    
+    if(rangeType == "today") {
+        endDate = today.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "this_week") {
+        endDay = today.addDay(7);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "this_month") {
+        endDay = today.addMonth(1);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else {
+        // Default to next 30 days
+        endDay = today.addDay(30);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    }
+    
+    result.put("start", startDate);
+    result.put("end", endDate);
+    
+    return result;
+}
