@@ -1,0 +1,261 @@
+// ========================================
+// HELPER UTILITIES v1.0
+// Entertainment Chatbot for Zoho SalesIQ
+// Purpose: Shared utility functions for all plugs
+// Language: Deluge
+// ========================================
+
+// ===== LOGGING UTILITY =====
+// Logs plug activity for debugging and monitoring
+function logPlugActivity(plugName, action, details) {
+    logEntry = map();
+    logEntry.put("plug", plugName);
+    logEntry.put("action", action);
+    logEntry.put("details", details);
+    logEntry.put("timestamp", now().toString());
+    logEntry.put("session_id", zoho.salesiq.visitorinfo.get("visitor_id"));
+    
+    // Log without exposing sensitive data
+    info "[EntHub] " + plugName + " - " + action + ": " + sanitizeLog(details);
+    
+    return logEntry;
+}
+
+// ===== ERROR HANDLING UTILITY =====
+// Handles errors with graceful fallbacks and user-friendly messages
+function handlePlugError(plugName, errorMessage, fallbackResponse) {
+    // Log error (without sensitive data)
+    error "[EntHub] " + plugName + " Error: " + sanitizeLog(errorMessage);
+    
+    // Build user-friendly response
+    response = map();
+    response.put("isSuccessful", false);
+    response.put("error_type", categorizeError(errorMessage));
+    response.put("message", getUserFriendlyMessage(errorMessage));
+    response.put("timestamp", now().toString());
+    
+    // Include fallback if provided
+    if(fallbackResponse != null) {
+        response.put("fallback", fallbackResponse);
+        response.put("hasFallback", true);
+    } else {
+        response.put("hasFallback", false);
+    }
+    
+    return response;
+}
+
+// ===== DATE RANGE CALCULATOR =====
+// Calculates date ranges for event filtering
+function calculateDateRange(rangeType) {
+    result = map();
+    today = zoho.currentdate;
+    
+    // Format: YYYY-MM-DDTHH:MM:SSZ
+    startDate = today.toString("yyyy-MM-dd") + "T00:00:00Z";
+    
+    if(rangeType == "today") {
+        endDate = today.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "tomorrow") {
+        tomorrow = today.addDay(1);
+        startDate = tomorrow.toString("yyyy-MM-dd") + "T00:00:00Z";
+        endDate = tomorrow.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "this_weekend") {
+        // Find next Saturday
+        daysUntilSaturday = (7 - today.getDayOfWeek()) % 7;
+        if(daysUntilSaturday == 0) daysUntilSaturday = 7;
+        saturday = today.addDay(daysUntilSaturday);
+        sunday = saturday.addDay(1);
+        startDate = saturday.toString("yyyy-MM-dd") + "T00:00:00Z";
+        endDate = sunday.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "this_week") {
+        endDay = today.addDay(7);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else if(rangeType == "this_month") {
+        endDay = today.addMonth(1);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    } else {
+        // Default to next 30 days
+        endDay = today.addDay(30);
+        endDate = endDay.toString("yyyy-MM-dd") + "T23:59:59Z";
+    }
+    
+    result.put("start", startDate);
+    result.put("end", endDate);
+    result.put("range_type", rangeType);
+    
+    return result;
+}
+
+// ===== PRIVACY-PRESERVING MOOD TAGGING =====
+// Converts free-text mood to predefined safe tags
+function tagMood(moodText) {
+    text = moodText.toLowerCase();
+    
+    // Stressed/Tired -> relaxation needed
+    if(text.contains("stress") || text.contains("tired") || text.contains("exhaust") || text.contains("overwhelm") || text.contains("burnt")) {
+        return "needs_relaxation";
+    }
+    
+    // Happy/Excited -> adventure
+    if(text.contains("happy") || text.contains("excit") || text.contains("great") || text.contains("amazing") || text.contains("fantastic")) {
+        return "ready_for_adventure";
+    }
+    
+    // Sad/Down -> comfort needed
+    if(text.contains("sad") || text.contains("down") || text.contains("lonely") || text.contains("upset") || text.contains("depress")) {
+        return "needs_comfort";
+    }
+    
+    // Bored -> excitement needed
+    if(text.contains("bored") || text.contains("nothing") || text.contains("stuck") || text.contains("meh")) {
+        return "needs_excitement";
+    }
+    
+    // Romantic mood
+    if(text.contains("romantic") || text.contains("love") || text.contains("date") || text.contains("special")) {
+        return "romantic_mood";
+    }
+    
+    // Social mood
+    if(text.contains("social") || text.contains("party") || text.contains("friends") || text.contains("fun") || text.contains("celebrate")) {
+        return "social_mood";
+    }
+    
+    // Chill/Lazy
+    if(text.contains("chill") || text.contains("lazy") || text.contains("relax") || text.contains("easy")) {
+        return "chill_mode";
+    }
+    
+    // Default: balanced
+    return "balanced";
+}
+
+// ===== INPUT SANITIZATION =====
+// Sanitizes user input to prevent injection and ensure safety
+function sanitizeInput(input) {
+    if(input == null || input.isEmpty()) {
+        return "";
+    }
+    
+    // Remove potentially harmful characters
+    sanitized = input.replaceAll("<", "");
+    sanitized = sanitized.replaceAll(">", "");
+    sanitized = sanitized.replaceAll("&", "");
+    sanitized = sanitized.replaceAll("\"", "");
+    sanitized = sanitized.replaceAll("'", "");
+    
+    // Trim and limit length
+    sanitized = sanitized.trim();
+    if(sanitized.length() > 500) {
+        sanitized = sanitized.substring(0, 500);
+    }
+    
+    return sanitized;
+}
+
+// ===== LOG SANITIZATION =====
+// Removes sensitive data from logs
+function sanitizeLog(logData) {
+    if(logData == null) {
+        return "null";
+    }
+    
+    logStr = logData.toString();
+    
+    // Redact potential sensitive patterns
+    logStr = logStr.replaceAll("api_key=.*?(&|$)", "api_key=[REDACTED]$1");
+    logStr = logStr.replaceAll("password=.*?(&|$)", "password=[REDACTED]$1");
+    logStr = logStr.replaceAll("token=.*?(&|$)", "token=[REDACTED]$1");
+    
+    return logStr;
+}
+
+// ===== ERROR CATEGORIZATION =====
+// Categorizes errors for better handling
+function categorizeError(errorMessage) {
+    msg = errorMessage.toLowerCase();
+    
+    if(msg.contains("timeout") || msg.contains("timed out")) {
+        return "TIMEOUT";
+    }
+    if(msg.contains("unauthorized") || msg.contains("401") || msg.contains("403")) {
+        return "AUTH_ERROR";
+    }
+    if(msg.contains("not found") || msg.contains("404")) {
+        return "NOT_FOUND";
+    }
+    if(msg.contains("rate limit") || msg.contains("429")) {
+        return "RATE_LIMITED";
+    }
+    if(msg.contains("connection") || msg.contains("network")) {
+        return "NETWORK_ERROR";
+    }
+    
+    return "UNKNOWN_ERROR";
+}
+
+// ===== USER-FRIENDLY ERROR MESSAGES =====
+// Converts technical errors to user-friendly messages
+function getUserFriendlyMessage(errorMessage) {
+    errorType = categorizeError(errorMessage);
+    
+    messages = map();
+    messages.put("TIMEOUT", "The service is taking too long to respond. Please try again!");
+    messages.put("AUTH_ERROR", "There's an issue with the service connection. Please try later.");
+    messages.put("NOT_FOUND", "We couldn't find what you're looking for. Try different options!");
+    messages.put("RATE_LIMITED", "We're getting too many requests. Please wait a moment and try again.");
+    messages.put("NETWORK_ERROR", "There seems to be a connection issue. Check your internet and retry.");
+    messages.put("UNKNOWN_ERROR", "Something went wrong. Please try again or choose different options.");
+    
+    return messages.get(errorType);
+}
+
+// ===== RESPONSE FORMATTER =====
+// Formats plug responses consistently
+function formatPlugResponse(isSuccess, data, message) {
+    response = map();
+    response.put("isSuccessful", isSuccess);
+    response.put("timestamp", now().toString());
+    response.put("message", message);
+    
+    if(data != null) {
+        response.put("data", data);
+    }
+    
+    return response;
+}
+
+// ===== RATING VALIDATOR =====
+// Validates and normalizes rating inputs
+function validateRating(rating, minVal, maxVal) {
+    if(rating == null || rating.isEmpty()) {
+        return minVal;
+    }
+    
+    try {
+        ratingNum = rating.toNumber();
+        if(ratingNum < minVal) {
+            return minVal;
+        }
+        if(ratingNum > maxVal) {
+            return maxVal;
+        }
+        return ratingNum;
+    } catch(e) {
+        return minVal;
+    }
+}
+
+// ===== CACHE HELPER =====
+// Simple cache key generator
+function generateCacheKey(plugName, params) {
+    keyParts = list();
+    keyParts.add(plugName);
+    
+    for each param in params {
+        keyParts.add(param.toString());
+    }
+    
+    return keyParts.toString().hashCode().toString();
+}
