@@ -1,0 +1,194 @@
+// ========================================
+// SUGGEST GAMES & FOOD PLUG v1.0 (DUAL PLUG)
+// Entertainment Chatbot for Zoho SalesIQ
+// Purpose A: Game recommendations via RAWG API
+// Purpose B: Food/Recipe recommendations via Spoonacular API
+// Auth: API Key Connections
+// Language: Deluge
+// ========================================
+
+pluginResponse = map();
+pluginResponse.put("isSuccessful", false);
+pluginResponse.put("timestamp", now().toString());
+
+try {
+    // ===== DETERMINE REQUEST TYPE =====
+    requestType = plug_input.get("type"); // "games" or "food"
+    
+    if(requestType == "games") {
+        pluginResponse = suggestGame(plug_input);
+    } else if(requestType == "food") {
+        pluginResponse = suggestFood(plug_input);
+    } else {
+        pluginResponse.put("message", "Please specify type: 'games' or 'food'");
+    }
+    
+} catch(e) {
+    pluginResponse.put("error", e.getMessage());
+    pluginResponse.put("isSuccessful", false);
+    error "[GamesFoodPlug] Error: " + e.getMessage();
+}
+
+return pluginResponse;
+
+// ===== FUNCTION A: GAME RECOMMENDATIONS =====
+function suggestGame(inputs) {
+    response = map();
+    response.put("isSuccessful", false);
+    
+    try {
+        platform = inputs.get("platform");
+        genre = inputs.get("genre");
+        
+        info "[GamesPlug] Processing - Platform: " + platform + ", Genre: " + genre;
+        
+        // RAWG API Configuration
+        rawg_url = "https://api.rawg.io/api/games";
+        
+        params = map();
+        params.put("page_size", "20");
+        params.put("ordering", "-rating");
+        
+        // Map platform names to RAWG platform IDs
+        platformMap = map();
+        platformMap.put("pc", "4");
+        platformMap.put("playstation", "18,16,15,27");
+        platformMap.put("xbox", "1,186,14");
+        platformMap.put("nintendo", "7");
+        platformMap.put("mobile", "21,3");
+        
+        if(!platform.isEmpty()) {
+            platformId = platformMap.get(platform.toLowerCase());
+            if(platformId != null) {
+                params.put("platforms", platformId);
+            }
+        }
+        
+        // Map genre names to RAWG genre slugs
+        if(!genre.isEmpty()) {
+            params.put("genres", genre.toLowerCase());
+        }
+        
+        // Invoke RAWG API
+        apiResponse = invokeurl([
+            url: rawg_url,
+            type: "GET",
+            parameters: params,
+            connection: "rawg_connection"
+        ]);
+        
+        responseMap = apiResponse.toMap();
+        results = responseMap.get("results");
+        
+        if(results != null && results.size() > 0) {
+            randomIndex = Math.rand(0, results.size() - 1);
+            selectedGame = results.get(randomIndex);
+            
+            gameData = map();
+            gameData.put("title", selectedGame.get("name"));
+            gameData.put("rating", selectedGame.get("rating"));
+            gameData.put("playtime_avg", selectedGame.get("playtime") + " hours");
+            gameData.put("released", selectedGame.get("released"));
+            gameData.put("image", selectedGame.get("background_image"));
+            
+            // Get platforms list
+            platforms = selectedGame.get("platforms");
+            platformNames = list();
+            for each p in platforms {
+                platformNames.add(p.get("platform").get("name"));
+            }
+            gameData.put("platforms", platformNames.toString());
+            
+            // Get genres list
+            genres = selectedGame.get("genres");
+            genreNames = list();
+            for each g in genres {
+                genreNames.add(g.get("name"));
+            }
+            gameData.put("genres", genreNames.toString());
+            
+            response.put("game", gameData);
+            response.put("isSuccessful", true);
+            response.put("message", "Found an awesome game for you!");
+        } else {
+            response.put("message", "No games found. Try different filters!");
+        }
+        
+    } catch(e) {
+        response.put("error", e.getMessage());
+        error "[GamesPlug] Error: " + e.getMessage();
+    }
+    
+    return response;
+}
+
+// ===== FUNCTION B: FOOD/RECIPE RECOMMENDATIONS =====
+function suggestFood(inputs) {
+    response = map();
+    response.put("isSuccessful", false);
+    
+    try {
+        cuisine = inputs.get("cuisine");
+        diet = inputs.get("diet");
+        
+        info "[FoodPlug] Processing - Cuisine: " + cuisine + ", Diet: " + diet;
+        
+        // Spoonacular API Configuration
+        spoonacular_url = "https://api.spoonacular.com/recipes/complexSearch";
+        
+        params = map();
+        params.put("number", "20");
+        params.put("sort", "popularity");
+        params.put("addRecipeInformation", "true");
+        
+        if(!cuisine.isEmpty()) {
+            params.put("cuisine", cuisine);
+        }
+        
+        if(!diet.isEmpty()) {
+            params.put("diet", diet);
+        }
+        
+        // Invoke Spoonacular API
+        apiResponse = invokeurl([
+            url: spoonacular_url,
+            type: "GET",
+            parameters: params,
+            connection: "spoonacular_connection"
+        ]);
+        
+        responseMap = apiResponse.toMap();
+        results = responseMap.get("results");
+        
+        if(results != null && results.size() > 0) {
+            randomIndex = Math.rand(0, results.size() - 1);
+            selectedRecipe = results.get(randomIndex);
+            
+            foodData = map();
+            foodData.put("title", selectedRecipe.get("title"));
+            foodData.put("image", selectedRecipe.get("image"));
+            foodData.put("servings", selectedRecipe.get("servings"));
+            foodData.put("ready_in_minutes", selectedRecipe.get("readyInMinutes"));
+            foodData.put("health_score", selectedRecipe.get("healthScore"));
+            foodData.put("source_url", selectedRecipe.get("sourceUrl"));
+            
+            // Get dish types
+            dishTypes = selectedRecipe.get("dishTypes");
+            if(dishTypes != null) {
+                foodData.put("dish_types", dishTypes.toString());
+            }
+            
+            response.put("recipe", foodData);
+            response.put("isSuccessful", true);
+            response.put("message", "Found a delicious recipe for you!");
+        } else {
+            response.put("message", "No recipes found. Try different cuisine or diet!");
+        }
+        
+    } catch(e) {
+        response.put("error", e.getMessage());
+        error "[FoodPlug] Error: " + e.getMessage();
+    }
+    
+    return response;
+}
