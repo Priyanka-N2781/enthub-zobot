@@ -116,7 +116,7 @@
             👉 Open the chat widget on the bottom right to start chatting with EntHub Bot!
         </p>
         
-        <button class="cta">Chat with EntHub Bot Now</button>
+        <button onclick="openZohoChat()" class="cta">Chat with EntHub Bot Now</button>
         
         <div class="footer">
             <p>Powered by Zoho SalesIQ | EntHub Bot v1.0</p>
@@ -126,5 +126,6 @@
     <!-- EntHub Bot Widget Code -->
     <script>window.$zoho=window.$zoho || {};$zoho.salesiq=$zoho.salesiq||{ready:function(){}}</script>
     <script id="zsiqscript" src="https://salesiq.zohopublic.in/widget?wc=siqe0ca9ee4fc2cf2cfc32caac0222644b61de4210ffd8cac4020baf9b7e722060d" defer></script>
+    <script>function openZohoChat(){if(window.$zoho && window.$zoho.salesiq && window.$zoho.salesiq.floatwindow){window.$zoho.salesiq.floatwindow.visible(true);}}</script>
 </body>
 </html>
